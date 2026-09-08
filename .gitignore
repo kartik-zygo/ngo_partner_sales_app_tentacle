@@ -1,0 +1,104 @@
+# Miscellaneous
+*.class
+*.claude
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# ── Secrets & environment ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+env.json
+dart_define.json
+dart_define.*.json
+!dart_define.example.json
+secrets.json
+credentials.json
+service-account*.json
+google-services.json
+GoogleService-Info.plist
+ios/Runner/GoogleService-Info.plist
+key.properties
+android/key.properties
+*.jks
+*.keystore
+*.p12
+*.p8
+*.mobileprovision
+*.cer
+*.certSigningRequest
+*.pem
+
+# ── Internal documentation & scratch ─────────────────────────────────────────
+docs/
+*.internal.md
+NOTES.md
+TODO.md
+SCRATCH.md
+scratch/
+tmp/
+*.bak
+*.orig
+*.rej
+
+# ── Build artefacts ──────────────────────────────────────────────────────────
+*.ipa
+*.apk
+*.aab
+*.app.dSYM.zip
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/App.framework
+macos/Pods/
+android/.gradle/
+android/local.properties
+
+# ── Editors ──────────────────────────────────────────────────────────────────
+.vscode/
+!.vscode/extensions.json
+**/xcuserdata/
+**/DerivedData/
+Thumbs.db
+desktop.ini
