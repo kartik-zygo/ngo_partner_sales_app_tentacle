@@ -10,6 +10,7 @@ import '../../domain/entities/dashboard_summary.dart';
 import '../../domain/entities/follow_up_task.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/entities/payment_request.dart';
+import '../../domain/entities/quotation_request.dart';
 import '../../domain/entities/revenue_record.dart';
 import '../../domain/entities/service_order.dart';
 import '../../domain/entities/service_package.dart';
@@ -133,15 +134,20 @@ class RemoteDataSource {
     String? status,
     String? source,
     String? assignedTo,
+    String? serviceId,
     String sortOrder = 'desc',
+    String sortBy = 'created_at',
   }) async {
     final res = await _dio.get('/leads', queryParameters: {
       'page': page,
       'limit': limit,
       'sortOrder': sortOrder,
+      // The server now only accepts created_at / updated_at / status here.
+      'sortBy': sortBy,
       if (status != null) 'status': status,
       if (source != null) 'source': source,
       if (assignedTo != null) 'assignedTo': assignedTo,
+      if (serviceId != null) 'serviceId': serviceId,
     });
     final list = _data(res) as List;
     return list.cast<Map<String, dynamic>>().map(_parseLead).toList();
@@ -196,6 +202,111 @@ class RemoteDataSource {
 
   Future<void> deleteLead(String id) async {
     await _dio.delete('/leads/$id');
+  }
+
+  // ---------------------------------------------------------------------------
+  // QUOTATIONS
+  // ---------------------------------------------------------------------------
+
+  Future<List<QuotationRequest>> getQuotations({
+    int page = 1,
+    int limit = 50,
+    String? assignedTo,
+    String? status,
+    String? search,
+    String? serviceId,
+    String? userId,
+    DateTime? from,
+    DateTime? to,
+    String sortOrder = 'desc',
+  }) async {
+    final res = await _dio.get('/quotations', queryParameters: {
+      'page': page,
+      'limit': limit,
+      'sortOrder': sortOrder,
+      // `me` and `unassigned` are accepted alongside a rep's UUID.
+      if (assignedTo != null) 'assignedTo': assignedTo,
+      if (status != null) 'status': status,
+      if (search != null && search.isNotEmpty) 'search': search,
+      if (serviceId != null) 'serviceId': serviceId,
+      if (userId != null) 'userId': userId,
+      if (from != null) 'from': from.toUtc().toIso8601String(),
+      if (to != null) 'to': to.toUtc().toIso8601String(),
+    });
+    final list = _data(res) as List;
+    return list.cast<Map<String, dynamic>>().map(_parseQuotation).toList();
+  }
+
+  Future<QuotationRequest> getQuotationById(String id) async {
+    final res = await _dio.get('/quotations/$id');
+    return _parseQuotation(_data(res) as Map<String, dynamic>);
+  }
+
+  Future<List<SalesRepOption>> getQuotationSalesReps() async {
+    final res = await _dio.get('/quotations/sales-reps');
+    final list = _data(res) as List;
+    return list.cast<Map<String, dynamic>>().map(_parseSalesRep).toList();
+  }
+
+  /// ADMIN only — SALES callers get a 403.
+  Future<QuotationRequest> assignQuotation(
+    String id, {
+    required String assignedTo,
+    String? note,
+  }) async {
+    try {
+      final res = await _dio.post('/quotations/$id/assign', data: {
+        'assignedTo': assignedTo,
+        if (note != null && note.isNotEmpty) 'note': note,
+      });
+      return _parseQuotation(_data(res) as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw _quotationError(e);
+    }
+  }
+
+  /// [status] takes the *lead* pipeline vocabulary — contacted, qualified,
+  /// proposalSent, won, lost. `note` is required on lost.
+  Future<QuotationRequest> updateQuotationStatus(
+    String id, {
+    required String status,
+    String? note,
+  }) async {
+    try {
+      final res = await _dio.patch('/quotations/$id/status', data: {
+        'status': status,
+        if (note != null && note.isNotEmpty) 'note': note,
+      });
+      return _parseQuotation(_data(res) as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw _quotationError(e);
+    }
+  }
+
+  Future<QuotationRequest> addQuotationNote(String id, String content) async {
+    final res = await _dio.post('/quotations/$id/notes', data: {
+      'content': content,
+    });
+    return _parseQuotation(_data(res) as Map<String, dynamic>);
+  }
+
+  /// Maps the documented failures onto typed exceptions so the bloc can tell
+  /// "refetch and retry" apart from "you are not allowed to do this".
+  Exception _quotationError(DioException e) {
+    final status = e.response?.statusCode;
+    final data = e.response?.data;
+    final error = (data is Map && data['error'] is Map)
+        ? Map<String, dynamic>.from(data['error'] as Map)
+        : const <String, dynamic>{};
+    final message = error['message'] as String? ?? e.message ?? 'Request failed';
+    final code = error['code'] as String?;
+
+    if (status == 409) return QuotationConflictException(message);
+    if (status == 403) return QuotationForbiddenException(message);
+    if (code == 'INVALID_STATUS_TRANSITION') {
+      return InvalidStatusTransitionException(message);
+    }
+    return Exception(message);
   }
 
   // ---------------------------------------------------------------------------
@@ -865,6 +976,8 @@ class RemoteDataSource {
             ))
         .toList();
 
+    final assignee = _parseAssignee(json['assignedTo']);
+
     return Lead(
       id: json['id'] as String,
       organization: json['contactName'] as String? ?? '',
@@ -873,15 +986,123 @@ class RemoteDataSource {
       email: json['contactEmail'] as String? ?? '',
       status: _parseLeadStatus(json['status'] as String? ?? 'newLead'),
       source: _parseLeadSource(json['source'] as String? ?? 'manual'),
-      assignedToSalesId: json['assignedTo'] as String?,
+      assignedToSalesId: assignee.id,
+      assignedToName: assignee.name,
+      assignedToEmail: assignee.email,
+      assignedAt: _parseDate(json['assignedAt']),
+      quotationRequestId: json['quotationRequestId'] as String?,
+      quotationReference: json['quotationReference'] as String?,
       userId: json['userId'] as String?,
       serviceId: json['serviceId'] as String?,
+      serviceName: json['serviceName'] as String?,
       createdAt: _parseDate(json['createdAt']) ?? DateTime.now(),
       updatedAt: _parseDate(json['updatedAt']),
       notes: notes,
-      activity: const [],
+      activity: (json['activity'] as List? ?? [])
+          .map((e) => e is Map
+              ? (e['message'] ?? e['description'] ?? '').toString()
+              : e.toString())
+          .where((e) => e.isNotEmpty)
+          .toList(),
       timeline: const [],
       userAppContext: const [],
+    );
+  }
+
+  /// `assignedTo` is an object (id, name, email) on the newer lead and
+  /// quotation payloads, but a bare id on older ones and on write responses.
+  ({String? id, String? name, String? email}) _parseAssignee(dynamic raw) {
+    if (raw is Map) {
+      final map = Map<String, dynamic>.from(raw);
+      return (
+        id: map['id'] as String?,
+        name: _displayName(map),
+        email: map['email'] as String?,
+      );
+    }
+    if (raw is String && raw.isNotEmpty) {
+      return (id: raw, name: null, email: null);
+    }
+    return (id: null, name: null, email: null);
+  }
+
+  /// Prefers an explicit `name`, else assembles it from the profile, else
+  /// falls back to the email so a row is never blank.
+  String? _displayName(Map<String, dynamic> map) {
+    final name = map['name'] as String?;
+    if (name != null && name.trim().isNotEmpty) return name.trim();
+
+    final profile = map['profile'] as Map<String, dynamic>? ?? const {};
+    final first = (map['firstName'] ?? profile['firstName']) as String? ?? '';
+    final last = (map['lastName'] ?? profile['lastName']) as String? ?? '';
+    final full = [first.trim(), last.trim()].where((p) => p.isNotEmpty).join(' ');
+    if (full.isNotEmpty) return full;
+
+    return map['email'] as String?;
+  }
+
+  QuotationRequest _parseQuotation(Map<String, dynamic> json) {
+    final assignee = _parseAssignee(json['assignedTo']);
+    final leadStatusRaw = json['leadStatus'] as String?;
+
+    return QuotationRequest(
+      id: json['id'] as String,
+      reference: json['reference'] as String? ?? '',
+      userId: json['userId'] as String?,
+      serviceId: json['serviceId'] as String?,
+      serviceName: json['serviceName'] as String? ?? '',
+      serviceCategory: json['serviceCategory'] as String?,
+      leadId: json['leadId'] as String?,
+      leadStatus:
+          leadStatusRaw == null ? null : _parseLeadStatus(leadStatusRaw),
+      contactName: json['contactName'] as String? ?? '',
+      contactEmail: json['contactEmail'] as String? ?? '',
+      contactPhone: json['contactPhone'] as String? ?? '',
+      organizationName: json['organizationName'] as String?,
+      message: json['message'] as String?,
+      status: QuotationStatusX.fromApi(json['status'] as String?),
+      statusLabel: json['statusLabel'] as String? ?? '',
+      assignedTo: assignee.id,
+      assignedToName: assignee.name ?? json['salesRepName'] as String?,
+      assignedToEmail: assignee.email,
+      assignedAt: _parseDate(json['assignedAt']),
+      closedAt: _parseDate(json['closedAt']),
+      source: json['source'] as String? ?? 'userApp',
+      createdAt: _parseDate(json['createdAt']) ?? DateTime.now(),
+      notes: (json['notes'] as List? ?? [])
+          .whereType<Map>()
+          .map((n) => QuotationNote(
+                content: (n['content'] ?? n['message'] ?? '').toString(),
+                createdAt: _parseDate(n['createdAt']) ?? DateTime.now(),
+                author: n['authorName'] as String? ??
+                    n['createdByName'] as String? ??
+                    (n['author'] is Map
+                        ? _displayName(
+                            Map<String, dynamic>.from(n['author'] as Map))
+                        : null),
+              ))
+          .toList(),
+      activity: (json['activity'] as List? ?? [])
+          .whereType<Map>()
+          .map((a) => QuotationActivity(
+                message: (a['message'] ?? a['description'] ?? a['event'] ?? '')
+                    .toString(),
+                createdAt: _parseDate(a['createdAt']) ?? DateTime.now(),
+                performedBy: a['performedBy'] as String? ??
+                    a['performedByName'] as String?,
+              ))
+          .where((a) => a.message.isNotEmpty)
+          .toList(),
+    );
+  }
+
+  SalesRepOption _parseSalesRep(Map<String, dynamic> json) {
+    return SalesRepOption(
+      id: json['id'] as String,
+      name: _displayName(json) ?? '',
+      email: json['email'] as String? ?? '',
+      phone: json['phone'] as String?,
+      openRequests: (json['openRequests'] as num?)?.toInt() ?? 0,
     );
   }
 

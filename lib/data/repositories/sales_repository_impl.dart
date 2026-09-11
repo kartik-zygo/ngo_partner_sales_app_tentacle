@@ -4,6 +4,7 @@ import '../../domain/entities/cross_app_notification_event.dart';
 import '../../domain/entities/dashboard_summary.dart';
 import '../../domain/entities/follow_up_task.dart';
 import '../../domain/entities/lead.dart';
+import '../../domain/entities/quotation_request.dart';
 import '../../domain/entities/service_order.dart';
 import '../../domain/entities/support_call_request.dart';
 import '../../domain/entities/support_ticket.dart';
@@ -272,4 +273,63 @@ class SalesRepositoryImpl implements SalesRepository {
       adminNotes: adminNotes,
     );
   }
+
+  // QUOTATIONS
+
+  @override
+  Future<List<QuotationRequest>> getQuotations({
+    String? assignedTo,
+    String? status,
+    String? search,
+    String? serviceId,
+    String? userId,
+    DateTime? from,
+    DateTime? to,
+    int page = 1,
+    int limit = 50,
+  }) {
+    return _remote.getQuotations(
+      page: page,
+      limit: limit,
+      assignedTo: assignedTo,
+      status: status,
+      search: search,
+      serviceId: serviceId,
+      userId: userId,
+      from: from,
+      to: to,
+    );
+  }
+
+  @override
+  Future<QuotationRequest> getQuotationById(String id) =>
+      _remote.getQuotationById(id);
+
+  @override
+  Future<List<SalesRepOption>> getSalesReps() =>
+      _remote.getQuotationSalesReps();
+
+  @override
+  Future<QuotationRequest> assignQuotation(
+    String id, {
+    required String assignedTo,
+    String? note,
+  }) {
+    return _remote.assignQuotation(id, assignedTo: assignedTo, note: note);
+  }
+
+  @override
+  Future<QuotationRequest> updateQuotationStatus(
+    String id, {
+    required LeadStatus status,
+    String? note,
+  }) {
+    // The endpoint speaks the lead pipeline, and LeadStatus.name already
+    // matches those wire values.
+    return _remote.updateQuotationStatus(id, status: status.name, note: note);
+  }
+
+  @override
+  Future<QuotationRequest> addQuotationNote(String id, String content) =>
+      _remote.addQuotationNote(id, content);
 }

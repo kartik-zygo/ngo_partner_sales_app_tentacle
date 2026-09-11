@@ -22,11 +22,13 @@ import '../../blocs/leads/leads_bloc.dart';
 import '../../blocs/notifications/notifications_bloc.dart';
 import '../../blocs/orders/orders_bloc.dart';
 import '../../blocs/payment_approvals/payment_approvals_bloc.dart';
+import '../../blocs/quotations/quotations_bloc.dart';
 import '../../blocs/tasks/tasks_bloc.dart';
 import 'sales_call_session_page.dart';
 import '../community/community_moderation_page.dart';
 import '../../widgets/metric_card.dart';
 import '../../widgets/payment_approvals_view.dart';
+import '../../widgets/quotations_view.dart';
 import '../../widgets/role_guard.dart';
 
 class SalesShellPage extends StatefulWidget {
@@ -55,6 +57,8 @@ class _SalesShellPageState extends State<SalesShellPage> {
     context
         .read<PaymentApprovalsBloc>()
         .add(const PaymentApprovalsLoaded(status: 'pending'));
+    // Reps work their own queue; `me` resolves server-side.
+    context.read<QuotationsBloc>().add(const QuotationsLoaded(assignedTo: 'me'));
     _subscribeSocketCallEvents();
   }
 
@@ -81,6 +85,24 @@ class _SalesShellPageState extends State<SalesShellPage> {
           .read<PaymentApprovalsBloc>()
           .add(PaymentApprovalSubmissionReceived(payload));
     });
+    socket.onQuotationAssigned((payload) {
+      if (!mounted) return;
+      context.read<QuotationsBloc>().add(QuotationSubmissionReceived(payload));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'New query assigned: ${payload['serviceName'] ?? 'a service'}',
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.salesAccent,
+          action: SnackBarAction(
+            label: 'Open',
+            textColor: Colors.white,
+            onPressed: () => _jumpTo(1),
+          ),
+        ),
+      );
+    });
   }
 
   void _unsubscribeSocketCallEvents() {
@@ -88,6 +110,7 @@ class _SalesShellPageState extends State<SalesShellPage> {
     socket.offCallIncoming();
     socket.offCallCancelled();
     socket.offPaymentRequestSubmitted();
+    socket.offQuotationAssigned();
   }
 
   SupportCallRequest _callFromSocket(Map<String, dynamic> data) {
@@ -161,12 +184,20 @@ class _SalesShellPageState extends State<SalesShellPage> {
     if (mounted) setState(() => _incomingDialogOpen = false);
   }
 
-  void _jumpTo(int newIndex) => setState(() => _index = newIndex);
+  static const int _quotationsTabIndex = 1;
+
+  void _jumpTo(int newIndex) {
+    setState(() => _index = newIndex);
+    if (newIndex == _quotationsTabIndex) {
+      context.read<QuotationsBloc>().add(const QuotationInboxSeen());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final tabs = [
       _SalesDashboardTab(onJumpTo: _jumpTo),
+      _SalesQuotationsTab(user: widget.user),
       const _LeadsTab(),
       const _TasksTab(),
       _CasesTab(userId: _salesMemberId),
@@ -244,7 +275,7 @@ class _SalesShellPageState extends State<SalesShellPage> {
                           if (ringingCount > 0)
                             _RingingBanner(
                               count: ringingCount,
-                              onTap: () => _jumpTo(3),
+                              onTap: () => _jumpTo(4),
                             ),
                           Expanded(
                             child: Row(
@@ -268,6 +299,14 @@ class _SalesShellPageState extends State<SalesShellPage> {
                                           icon: Icon(Icons.dashboard_outlined),
                                           selectedIcon: Icon(Icons.dashboard_rounded),
                                           label: Text('Dashboard')),
+                                      const NavigationRailDestination(
+                                          icon: _QuotationBadge(
+                                              child: Icon(
+                                                  Icons.request_quote_outlined)),
+                                          selectedIcon: _QuotationBadge(
+                                              child: Icon(
+                                                  Icons.request_quote_rounded)),
+                                          label: Text('Quotations')),
                                       const NavigationRailDestination(
                                           icon: Icon(Icons.people_outline_rounded),
                                           selectedIcon: Icon(Icons.people_rounded),
@@ -316,6 +355,10 @@ class _SalesShellPageState extends State<SalesShellPage> {
                           destinations: [
                             const NavigationDestination(
                                 icon: Icon(Icons.dashboard_outlined), label: 'Home'),
+                            const NavigationDestination(
+                                icon: _QuotationBadge(
+                                    child: Icon(Icons.request_quote_outlined)),
+                                label: 'Quotes'),
                             const NavigationDestination(
                                 icon: Icon(Icons.people_outline_rounded), label: 'Leads'),
                             const NavigationDestination(
@@ -415,7 +458,7 @@ class _SalesDashboardTab extends StatelessWidget {
             runSpacing: 10,
             children: [
               FilledButton.icon(
-                onPressed: () => onJumpTo(1),
+                onPressed: () => onJumpTo(2),
                 icon: const Icon(Icons.person_add_alt_1_rounded),
                 label: const Text('Add Lead'),
               ),
@@ -423,7 +466,7 @@ class _SalesDashboardTab extends StatelessWidget {
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.adminAccent,
                 ),
-                onPressed: () => onJumpTo(2),
+                onPressed: () => onJumpTo(3),
                 icon: const Icon(Icons.checklist_rtl_rounded),
                 label: const Text('My Tasks'),
               ),
@@ -431,7 +474,7 @@ class _SalesDashboardTab extends StatelessWidget {
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.salesAccentDeep,
                 ),
-                onPressed: () => onJumpTo(3),
+                onPressed: () => onJumpTo(4),
                 icon: const Icon(Icons.folder_copy_rounded),
                 label: const Text('Cases & Support'),
               ),
@@ -481,6 +524,45 @@ class _SalesDashboardTab extends StatelessWidget {
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Counts `quotation:assigned` events since the rep last opened the tab.
+class _QuotationBadge extends StatelessWidget {
+  const _QuotationBadge({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<QuotationsBloc, QuotationsState>(
+      buildWhen: (p, c) => p.unseenCount != c.unseenCount,
+      builder: (context, state) => Badge(
+        isLabelVisible: state.unseenCount > 0,
+        label: Text('${state.unseenCount}'),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _SalesQuotationsTab extends StatelessWidget {
+  const _SalesQuotationsTab({required this.user});
+
+  final AppUser user;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScaffold(
+      title: 'Quotations',
+      accent: AppColors.salesAccent,
+      child: QuotationsView(
+        accent: AppColors.salesAccent,
+        // Assigning is ADMIN-only; the server rejects a SALES caller with 403.
+        canAssign: false,
+        currentUserId: user.id,
       ),
     );
   }
@@ -627,6 +709,21 @@ class _LeadsTabState extends State<_LeadsTab> {
                                         ),
                                         const SizedBox(height: 6),
                                         _LeadSourceBadge(source: lead.source),
+                                        // Set when the lead came in through a
+                                        // client's quotation request.
+                                        if (lead.quotationReference != null &&
+                                            lead.quotationReference!
+                                                .isNotEmpty) ...[
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            lead.quotationReference!,
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.muted,
+                                            ),
+                                          ),
+                                        ],
                                       ],
                                     ),
                                   ),
@@ -777,6 +874,41 @@ class _LeadDetailPageState extends State<_LeadDetailPage> {
                     const SizedBox(height: 4),
                     Text('${lead.contactName} • ${lead.phone}'),
                     Text(lead.email),
+                    if (lead.quotationReference != null &&
+                        lead.quotationReference!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(Icons.request_quote_outlined,
+                              size: 14, color: AppColors.muted),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Quotation ${lead.quotationReference}',
+                            style: const TextStyle(
+                                fontSize: 12.5, color: AppColors.muted),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (lead.assignedToName != null &&
+                        lead.assignedToName!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.person_pin_rounded,
+                              size: 14, color: AppColors.positive),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Assigned to ${lead.assignedToName}',
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              color: AppColors.positive,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 8,
@@ -1807,6 +1939,41 @@ class _CaseWizardPageState extends State<_CaseWizardPage> {
   }
 }
 
+/// Orders and their payment approvals only settle business that was already
+/// in flight at the quotation cutover. Nothing new lands here.
+class _LegacyOrdersNotice extends StatelessWidget {
+  const _LegacyOrdersNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.warning.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+        ),
+        child: const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.history_rounded, size: 16, color: AppColors.warning),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Legacy — orders placed before the quotation cutover. New '
+                'business comes in through Quotations.',
+                style: TextStyle(fontSize: 12.5),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SalesOrdersTab extends StatefulWidget {
   const _SalesOrdersTab();
 
@@ -1845,10 +2012,11 @@ class _SalesOrdersTabState extends State<_SalesOrdersTab>
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      title: 'Orders',
+      title: 'Legacy orders',
       accent: AppColors.salesAccent,
       child: Column(
         children: [
+          const _LegacyOrdersNotice(),
           TabBar(
             controller: _tabController,
             labelColor: AppColors.salesAccent,

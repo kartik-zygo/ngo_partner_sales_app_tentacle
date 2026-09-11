@@ -4,6 +4,7 @@ import '../entities/cross_app_notification_event.dart';
 import '../entities/dashboard_summary.dart';
 import '../entities/follow_up_task.dart';
 import '../entities/lead.dart';
+import '../entities/quotation_request.dart';
 import '../entities/support_call_request.dart';
 import '../entities/support_ticket.dart';
 import '../entities/user_action_payload.dart';
@@ -286,4 +287,84 @@ class GetAgoraTokenUseCase {
   Future<Map<String, dynamic>> call(String callId) {
     return _repository.getAgoraToken(callId);
   }
+}
+
+// ── Quotations ───────────────────────────────────────────────────────────────
+
+class GetQuotationsUseCase {
+  GetQuotationsUseCase(this._repository);
+  final SalesRepository _repository;
+
+  Future<List<QuotationRequest>> call({
+    String? assignedTo,
+    String? status,
+    String? search,
+    String? serviceId,
+    String? userId,
+    DateTime? from,
+    DateTime? to,
+    int page = 1,
+    int limit = 50,
+  }) {
+    return _repository.getQuotations(
+      assignedTo: assignedTo,
+      status: status,
+      search: search,
+      serviceId: serviceId,
+      userId: userId,
+      from: from,
+      to: to,
+      page: page,
+      limit: limit,
+    );
+  }
+}
+
+class GetQuotationByIdUseCase {
+  GetQuotationByIdUseCase(this._repository);
+  final SalesRepository _repository;
+
+  Future<QuotationRequest> call(String id) =>
+      _repository.getQuotationById(id);
+}
+
+class GetSalesRepsUseCase {
+  GetSalesRepsUseCase(this._repository);
+  final SalesRepository _repository;
+
+  Future<List<SalesRepOption>> call() => _repository.getSalesReps();
+}
+
+class AssignQuotationUseCase {
+  AssignQuotationUseCase(this._repository);
+  final SalesRepository _repository;
+
+  Future<QuotationRequest> call(
+    String id, {
+    required String assignedTo,
+    String? note,
+  }) {
+    return _repository.assignQuotation(id, assignedTo: assignedTo, note: note);
+  }
+}
+
+class UpdateQuotationStatusUseCase {
+  UpdateQuotationStatusUseCase(this._repository);
+  final SalesRepository _repository;
+
+  Future<QuotationRequest> call(
+    String id, {
+    required LeadStatus status,
+    String? note,
+  }) {
+    return _repository.updateQuotationStatus(id, status: status, note: note);
+  }
+}
+
+class AddQuotationNoteUseCase {
+  AddQuotationNoteUseCase(this._repository);
+  final SalesRepository _repository;
+
+  Future<QuotationRequest> call(String id, String content) =>
+      _repository.addQuotationNote(id, content);
 }

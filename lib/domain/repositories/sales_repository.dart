@@ -4,6 +4,7 @@ import '../entities/cross_app_notification_event.dart';
 import '../entities/dashboard_summary.dart';
 import '../entities/follow_up_task.dart';
 import '../entities/lead.dart';
+import '../entities/quotation_request.dart';
 import '../entities/service_order.dart';
 import '../entities/support_call_request.dart';
 import '../entities/support_ticket.dart';
@@ -92,4 +93,35 @@ abstract class SalesRepository {
     required String fulfillmentStatus,
     String? adminNotes,
   });
+
+  // Quotations — the inbox both roles work from.
+
+  Future<List<QuotationRequest>> getQuotations({
+    String? assignedTo,
+    String? status,
+    String? search,
+    String? serviceId,
+    String? userId,
+    DateTime? from,
+    DateTime? to,
+    int page,
+    int limit,
+  });
+  Future<QuotationRequest> getQuotationById(String id);
+  Future<List<SalesRepOption>> getSalesReps();
+
+  /// ADMIN only; SALES callers get a 403 from the server.
+  Future<QuotationRequest> assignQuotation(
+    String id, {
+    required String assignedTo,
+    String? note,
+  });
+
+  /// [status] is the lead pipeline vocabulary; `note` is required on lost.
+  Future<QuotationRequest> updateQuotationStatus(
+    String id, {
+    required LeadStatus status,
+    String? note,
+  });
+  Future<QuotationRequest> addQuotationNote(String id, String content);
 }

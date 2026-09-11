@@ -94,6 +94,11 @@ class Lead extends Equatable {
     this.userPhone,
     this.serviceId,
     this.serviceName,
+    this.assignedToName,
+    this.assignedToEmail,
+    this.assignedAt,
+    this.quotationRequestId,
+    this.quotationReference,
     String? assignedToSalesId,
     String? assignedToUserId,
     this.notes = const [],
@@ -118,6 +123,14 @@ class Lead extends Equatable {
   final String? serviceId;
   final String? serviceName;
   final String? assignedToSalesId;
+  final String? assignedToName;
+  final String? assignedToEmail;
+  final DateTime? assignedAt;
+
+  /// Set when the lead was opened by a client's quotation request — the two
+  /// records move together.
+  final String? quotationRequestId;
+  final String? quotationReference;
   final List<LeadNote> notes;
   final List<String> activity;
   final List<LeadActivity> timeline;
@@ -143,6 +156,11 @@ class Lead extends Equatable {
     String? serviceId,
     String? serviceName,
     String? assignedToSalesId,
+    String? assignedToName,
+    String? assignedToEmail,
+    DateTime? assignedAt,
+    String? quotationRequestId,
+    String? quotationReference,
     List<LeadNote>? notes,
     List<String>? activity,
     List<LeadActivity>? timeline,
@@ -165,6 +183,11 @@ class Lead extends Equatable {
       serviceId: serviceId ?? this.serviceId,
       serviceName: serviceName ?? this.serviceName,
       assignedToSalesId: assignedToSalesId ?? this.assignedToSalesId,
+      assignedToName: assignedToName ?? this.assignedToName,
+      assignedToEmail: assignedToEmail ?? this.assignedToEmail,
+      assignedAt: assignedAt ?? this.assignedAt,
+      quotationRequestId: quotationRequestId ?? this.quotationRequestId,
+      quotationReference: quotationReference ?? this.quotationReference,
       notes: notes ?? this.notes,
       activity: activity ?? this.activity,
       timeline: timeline ?? this.timeline,
@@ -190,6 +213,11 @@ class Lead extends Equatable {
         serviceId,
         serviceName,
         assignedToSalesId,
+        assignedToName,
+        assignedToEmail,
+        assignedAt,
+        quotationRequestId,
+        quotationReference,
         notes,
         activity,
         timeline,

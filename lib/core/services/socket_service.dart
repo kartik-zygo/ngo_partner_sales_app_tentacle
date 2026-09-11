@@ -16,7 +16,7 @@ class SocketService {
       AppConstants.socketBaseUrl,
       io.OptionBuilder()
           .setTransports(['websocket'])
-          .setPath('/socket.io')
+          .setPath(AppConstants.socketPath)
           .setAuth({'token': accessToken})
           .disableAutoConnect()
           .enableReconnection()
@@ -43,6 +43,31 @@ class SocketService {
 
   void offPaymentRequestSubmitted() {
     _socket?.off('order:paymentRequestSubmitted');
+  }
+
+  /// Fires in the `sales-team` room whenever a client submits the quotation
+  /// form — ADMIN and SALES tokens join that room automatically.
+  void onQuotationSubmitted(CallEventCallback callback) {
+    _socket?.on('quotation:submitted', (data) {
+      final map = _toMap(data);
+      if (map != null) callback(map);
+    });
+  }
+
+  void offQuotationSubmitted() {
+    _socket?.off('quotation:submitted');
+  }
+
+  /// Fires in the rep's own user room when a request is assigned to them.
+  void onQuotationAssigned(CallEventCallback callback) {
+    _socket?.on('quotation:assigned', (data) {
+      final map = _toMap(data);
+      if (map != null) callback(map);
+    });
+  }
+
+  void offQuotationAssigned() {
+    _socket?.off('quotation:assigned');
   }
 
   Map<String, dynamic>? _toMap(dynamic data) {

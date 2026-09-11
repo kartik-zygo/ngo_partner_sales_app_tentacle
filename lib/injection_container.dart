@@ -28,6 +28,7 @@ import 'presentation/blocs/leads/leads_bloc.dart';
 import 'presentation/blocs/notifications/notifications_bloc.dart';
 import 'presentation/blocs/orders/orders_bloc.dart';
 import 'presentation/blocs/payment_approvals/payment_approvals_bloc.dart';
+import 'presentation/blocs/quotations/quotations_bloc.dart';
 import 'presentation/blocs/tasks/tasks_bloc.dart';
 
 final sl = GetIt.instance;
@@ -113,6 +114,13 @@ Future<void> initDependencies() async {
   sl.registerLazySingleton(() => GetPaymentRequestsUseCase(sl()));
   sl.registerLazySingleton(() => GetPaymentRequestByIdUseCase(sl()));
   sl.registerLazySingleton(() => DecidePaymentRequestUseCase(sl()));
+
+  sl.registerLazySingleton(() => GetQuotationsUseCase(sl()));
+  sl.registerLazySingleton(() => GetQuotationByIdUseCase(sl()));
+  sl.registerLazySingleton(() => GetSalesRepsUseCase(sl()));
+  sl.registerLazySingleton(() => AssignQuotationUseCase(sl()));
+  sl.registerLazySingleton(() => UpdateQuotationStatusUseCase(sl()));
+  sl.registerLazySingleton(() => AddQuotationNoteUseCase(sl()));
 
   sl.registerLazySingleton(() => GetNotificationsUseCase(sl()));
   sl.registerLazySingleton(() => MarkNotificationReadUseCase(sl()));
@@ -233,6 +241,17 @@ Future<void> initDependencies() async {
       getPaymentRequestsUseCase: sl(),
       getPaymentRequestByIdUseCase: sl(),
       decidePaymentRequestUseCase: sl(),
+    ),
+  );
+
+  sl.registerFactory(
+    () => QuotationsBloc(
+      getQuotationsUseCase: sl(),
+      getQuotationByIdUseCase: sl(),
+      getSalesRepsUseCase: sl(),
+      assignQuotationUseCase: sl(),
+      updateQuotationStatusUseCase: sl(),
+      addQuotationNoteUseCase: sl(),
     ),
   );
 

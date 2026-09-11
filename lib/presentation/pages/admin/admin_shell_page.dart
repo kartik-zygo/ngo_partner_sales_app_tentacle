@@ -26,8 +26,10 @@ import '../../blocs/dashboard/dashboard_bloc.dart';
 import '../../blocs/notifications/notifications_bloc.dart';
 import '../../blocs/orders/orders_bloc.dart';
 import '../../blocs/payment_approvals/payment_approvals_bloc.dart';
+import '../../blocs/quotations/quotations_bloc.dart';
 import '../../widgets/metric_card.dart';
 import '../../widgets/payment_approvals_view.dart';
+import '../../widgets/quotations_view.dart';
 import '../community/community_moderation_page.dart';
 import '../../widgets/role_guard.dart';
 
@@ -55,7 +57,41 @@ class _AdminShellPageState extends State<AdminShellPage> {
     context
         .read<PaymentApprovalsBloc>()
         .add(const PaymentApprovalsLoaded(status: 'pending'));
+    context.read<QuotationsBloc>()
+      ..add(const QuotationsLoaded(assignedTo: 'unassigned'))
+      ..add(const SalesRepsLoaded());
     _subscribeToPaymentSubmissions();
+    _subscribeToQuotationSubmissions();
+  }
+
+  static const int _quotationsTabIndex = 1;
+
+  void _selectTab(int value) {
+    setState(() => _index = value);
+    if (value == _quotationsTabIndex) {
+      context.read<QuotationsBloc>().add(const QuotationInboxSeen());
+    }
+  }
+
+  void _subscribeToQuotationSubmissions() {
+    GetIt.instance<SocketService>().onQuotationSubmitted((payload) {
+      if (!mounted) return;
+      context.read<QuotationsBloc>().add(QuotationSubmissionReceived(payload));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'New query for ${payload['serviceName'] ?? 'a service'}',
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.adminAccent,
+          action: SnackBarAction(
+            label: 'Open',
+            textColor: Colors.white,
+            onPressed: () => _selectTab(1),
+          ),
+        ),
+      );
+    });
   }
 
   void _subscribeToPaymentSubmissions() {
@@ -74,7 +110,7 @@ class _AdminShellPageState extends State<AdminShellPage> {
           action: SnackBarAction(
             label: 'Review',
             textColor: Colors.white,
-            onPressed: () => setState(() => _index = 4),
+            onPressed: () => setState(() => _index = 5),
           ),
         ),
       );
@@ -83,7 +119,9 @@ class _AdminShellPageState extends State<AdminShellPage> {
 
   @override
   void dispose() {
-    GetIt.instance<SocketService>().offPaymentRequestSubmitted();
+    GetIt.instance<SocketService>()
+      ..offPaymentRequestSubmitted()
+      ..offQuotationSubmitted();
     super.dispose();
   }
 
@@ -94,6 +132,7 @@ class _AdminShellPageState extends State<AdminShellPage> {
         onTabChange: (i) => setState(() => _index = i),
         user: widget.user,
       ),
+      _AdminQuotationsTab(user: widget.user),
       const _LeadAssignmentTab(),
       const _TeamManagementTab(),
       const _ServiceCatalogTab(),
@@ -166,7 +205,7 @@ class _AdminShellPageState extends State<AdminShellPage> {
                       if (isTablet)
                         NavigationRail(
                           selectedIndex: _index,
-                          onDestinationSelected: (value) => setState(() => _index = value),
+                          onDestinationSelected: _selectTab,
                           labelType: NavigationRailLabelType.all,
                           indicatorColor: AppColors.adminAccent.withValues(alpha: 0.2),
                           leading: Padding(
@@ -179,6 +218,12 @@ class _AdminShellPageState extends State<AdminShellPage> {
                                 icon: Icon(Icons.space_dashboard_outlined),
                                 selectedIcon: Icon(Icons.space_dashboard_rounded),
                                 label: Text('Dashboard')),
+                            NavigationRailDestination(
+                                icon: _QuotationBadge(
+                                    child: Icon(Icons.request_quote_outlined)),
+                                selectedIcon: _QuotationBadge(
+                                    child: Icon(Icons.request_quote_rounded)),
+                                label: Text('Quotations')),
                             NavigationRailDestination(
                                 icon: Icon(Icons.assignment_ind_outlined),
                                 selectedIcon: Icon(Icons.assignment_ind_rounded),
@@ -194,7 +239,7 @@ class _AdminShellPageState extends State<AdminShellPage> {
                             NavigationRailDestination(
                                 icon: Icon(Icons.receipt_long_outlined),
                                 selectedIcon: Icon(Icons.receipt_long_rounded),
-                                label: Text('Payments')),
+                                label: Text('Legacy')),
                             NavigationRailDestination(
                                 icon: Icon(Icons.verified_outlined),
                                 selectedIcon: Icon(Icons.verified_rounded),
@@ -218,13 +263,17 @@ class _AdminShellPageState extends State<AdminShellPage> {
                   ? null
                   : NavigationBar(
                       selectedIndex: _index,
-                      onDestinationSelected: (value) => setState(() => _index = value),
+                      onDestinationSelected: _selectTab,
                       destinations: const [
                         NavigationDestination(icon: Icon(Icons.dashboard), label: 'Home'),
+                        NavigationDestination(
+                            icon: _QuotationBadge(
+                                child: Icon(Icons.request_quote)),
+                            label: 'Quotes'),
                         NavigationDestination(icon: Icon(Icons.assignment_ind), label: 'Assign'),
                         NavigationDestination(icon: Icon(Icons.group), label: 'Team'),
                         NavigationDestination(icon: Icon(Icons.design_services), label: 'Services'),
-                        NavigationDestination(icon: Icon(Icons.receipt_long), label: 'Payments'),
+                        NavigationDestination(icon: Icon(Icons.receipt_long), label: 'Legacy'),
                         NavigationDestination(icon: Icon(Icons.verified), label: 'Approval'),
                         NavigationDestination(icon: Icon(Icons.analytics), label: 'Reports'),
                         NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
@@ -334,7 +383,7 @@ class _AdminDashboardTab extends StatelessWidget {
                       '${metrics.unassignedUserAppLeads} lead(s) waiting for assignment',
                   icon: Icons.assignment_late_outlined,
                   color: AppColors.warning,
-                  onTap: () => onTabChange(1),
+                  onTap: () => onTabChange(2),
                 ),
               );
             },
@@ -350,45 +399,52 @@ class _AdminDashboardTab extends StatelessWidget {
             child: Row(
               children: [
                 _QuickActionChip(
+                  icon: Icons.request_quote_rounded,
+                  label: 'Quotations',
+                  color: AppColors.adminAccent,
+                  onTap: () => onTabChange(1),
+                ),
+                const SizedBox(width: 8),
+                _QuickActionChip(
                   icon: Icons.assignment_ind_rounded,
                   label: 'Assign Leads',
                   color: AppColors.salesAccent,
-                  onTap: () => onTabChange(1),
+                  onTap: () => onTabChange(2),
                 ),
                 const SizedBox(width: 8),
                 _QuickActionChip(
                   icon: Icons.group_rounded,
                   label: 'Manage Team',
                   color: AppColors.positive,
-                  onTap: () => onTabChange(2),
+                  onTap: () => onTabChange(3),
                 ),
                 const SizedBox(width: 8),
                 _QuickActionChip(
                   icon: Icons.design_services_rounded,
                   label: 'Services',
                   color: AppColors.adminAccent,
-                  onTap: () => onTabChange(3),
+                  onTap: () => onTabChange(4),
                 ),
                 const SizedBox(width: 8),
                 _QuickActionChip(
                   icon: Icons.receipt_long_rounded,
-                  label: 'Payments',
+                  label: 'Legacy payments',
                   color: AppColors.warning,
-                  onTap: () => onTabChange(4),
+                  onTap: () => onTabChange(5),
                 ),
                 const SizedBox(width: 8),
                 _QuickActionChip(
                   icon: Icons.verified_rounded,
                   label: 'Approvals',
                   color: AppColors.danger,
-                  onTap: () => onTabChange(5),
+                  onTap: () => onTabChange(6),
                 ),
                 const SizedBox(width: 8),
                 _QuickActionChip(
                   icon: Icons.analytics_rounded,
                   label: 'Reports',
                   color: AppColors.muted,
-                  onTap: () => onTabChange(6),
+                  onTap: () => onTabChange(7),
                 ),
                 const SizedBox(width: 8),
                 _QuickActionChip(
@@ -739,6 +795,44 @@ class _RecentActivityFeed extends StatelessWidget {
   }
 }
 
+/// Counts `quotation:submitted` events since the inbox was last opened.
+class _QuotationBadge extends StatelessWidget {
+  const _QuotationBadge({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<QuotationsBloc, QuotationsState>(
+      buildWhen: (p, c) => p.unseenCount != c.unseenCount,
+      builder: (context, state) => Badge(
+        isLabelVisible: state.unseenCount > 0,
+        label: Text('${state.unseenCount}'),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _AdminQuotationsTab extends StatelessWidget {
+  const _AdminQuotationsTab({required this.user});
+
+  final AppUser user;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScaffold(
+      title: 'Quotations',
+      accent: AppColors.adminAccent,
+      child: QuotationsView(
+        accent: AppColors.adminAccent,
+        canAssign: true,
+        currentUserId: user.id,
+      ),
+    );
+  }
+}
+
 class _LeadAssignmentTab extends StatelessWidget {
   const _LeadAssignmentTab();
 
@@ -865,7 +959,8 @@ class _LeadAssignmentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final activeMembers = state.members.where((member) => member.isActive).toList();
     final activeMemberIds = activeMembers.map((member) => member.id).toSet();
-    // Use local cache first since the API doesn't return assignedTo in list responses
+    // The local cache wins only until the next fetch — a just-made assignment
+    // is reflected there before the list is reloaded.
     final effectiveAssignedId = state.leadAssignments[lead.id] ?? lead.assignedToSalesId;
     final selectedMemberId = activeMemberIds.contains(effectiveAssignedId)
         ? effectiveAssignedId
@@ -888,15 +983,25 @@ class _LeadAssignmentCard extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 4),
                   Text('${lead.contactName} • ${lead.status.label}'),
-                  if (assignedMember != null) ...[
+                  if (lead.serviceName != null &&
+                      lead.serviceName!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      lead.serviceName!,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: AppColors.muted,
+                          ),
+                    ),
+                  ],
+                  if (assignedMember != null || lead.assignedToName != null) ...[
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Icon(Icons.person_pin_rounded,
+                        const Icon(Icons.person_pin_rounded,
                             size: 14, color: AppColors.positive),
                         const SizedBox(width: 4),
                         Text(
-                          'Assigned to ${assignedMember.name}',
+                          'Assigned to ${assignedMember?.name ?? lead.assignedToName}',
                           style: Theme.of(context).textTheme.labelSmall?.copyWith(
                                 color: AppColors.positive,
                                 fontWeight: FontWeight.w600,
@@ -912,6 +1017,14 @@ class _LeadAssignmentCard extends StatelessWidget {
                     children: [
                       _LeadSourceBadge(source: lead.source),
                       _SlaBadge(createdAt: lead.createdAt),
+                      // Present when the lead was opened by a client's
+                      // quotation request — the two records move together.
+                      if (lead.quotationReference != null &&
+                          lead.quotationReference!.isNotEmpty)
+                        StatusPill(
+                          label: lead.quotationReference!,
+                          color: AppColors.adminAccent,
+                        ),
                     ],
                   ),
                 ],
@@ -1681,6 +1794,41 @@ class _ServiceCard extends StatelessWidget {
   }
 }
 
+/// Orders and their payment approvals only exist to settle business that was
+/// already in flight at the quotation cutover. Nothing new lands here.
+class _LegacyPaymentsNotice extends StatelessWidget {
+  const _LegacyPaymentsNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.warning.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+        ),
+        child: const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.history_rounded, size: 16, color: AppColors.warning),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Legacy — orders placed before the quotation cutover. New '
+                'business comes in through Quotations.',
+                style: TextStyle(fontSize: 12.5),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _AdminOrdersTab extends StatefulWidget {
   const _AdminOrdersTab();
 
@@ -1719,10 +1867,11 @@ class _AdminOrdersTabState extends State<_AdminOrdersTab>
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      title: 'Payments',
+      title: 'Legacy payments',
       accent: AppColors.adminAccent,
       child: Column(
         children: [
+          const _LegacyPaymentsNotice(),
           _buildTabBar(),
           Expanded(
             child: TabBarView(

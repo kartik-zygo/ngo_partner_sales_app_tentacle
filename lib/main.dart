@@ -13,6 +13,7 @@ import 'presentation/blocs/leads/leads_bloc.dart';
 import 'presentation/blocs/notifications/notifications_bloc.dart';
 import 'presentation/blocs/orders/orders_bloc.dart';
 import 'presentation/blocs/payment_approvals/payment_approvals_bloc.dart';
+import 'presentation/blocs/quotations/quotations_bloc.dart';
 import 'presentation/blocs/tasks/tasks_bloc.dart';
 import 'presentation/pages/admin/admin_shell_page.dart';
 import 'presentation/pages/auth/login_page.dart';
@@ -42,6 +43,7 @@ class NgoPartnerSalesApp extends StatelessWidget {
         BlocProvider(create: (_) => sl<AdminReportsBloc>()),
         BlocProvider(create: (_) => sl<OrdersBloc>()),
         BlocProvider(create: (_) => sl<PaymentApprovalsBloc>()),
+        BlocProvider(create: (_) => sl<QuotationsBloc>()),
       ],
       child: MaterialApp(
         title: AppConstants.appName,
