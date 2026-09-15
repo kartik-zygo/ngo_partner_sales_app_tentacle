@@ -3,6 +3,11 @@ class AppConstants {
 
   static const Duration splashDuration = Duration(milliseconds: 1400);
 
+  /// Public account-deletion page, opened in-app from Profile / Settings
+  /// (App Store guideline 5.1.1(v)).
+  static const String deleteAccountUrl =
+      'https://www.zygonich.com/tentacle-crm/delete-account';
+
   // The API lives behind a path prefix on a TLS host. Plain HTTP on a
   // non-standard port never reached the server from mobile networks, and
   // Android blocks cleartext by default — never point this back at one.

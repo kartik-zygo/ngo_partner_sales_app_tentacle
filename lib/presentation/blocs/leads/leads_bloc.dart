@@ -377,12 +377,21 @@ class LeadsBloc extends Bloc<LeadsEvent, LeadsState> {
     SupportCallUpdated event,
     Emitter<LeadsState> emit,
   ) async {
-    await _updateSupportCallStatusUseCase(
-      callId: event.callId,
-      status: event.status,
-      actorId: event.actorId,
-      actorName: event.actorName,
-    );
+    try {
+      await _updateSupportCallStatusUseCase(
+        callId: event.callId,
+        status: event.status,
+        actorId: event.actorId,
+        actorName: event.actorName,
+      );
+    } catch (_) {
+      // Accepting races the server-side auto-accept inside the Agora token
+      // request, and ending races the caller hanging up. Either way the call
+      // already sits in the intended state, so the rejected transition is not
+      // worth surfacing over a live call.
+      await _refreshData(emit, state.userId);
+      return;
+    }
     await _refreshData(emit, state.userId);
     emit(state.copyWith(message: 'Support call status updated'));
   }

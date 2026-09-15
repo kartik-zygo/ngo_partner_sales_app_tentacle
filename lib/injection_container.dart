@@ -53,6 +53,7 @@ Future<void> initDependencies() async {
   sl.registerLazySingleton(() => LoginUseCase(sl()));
   sl.registerLazySingleton(() => LogoutUseCase(sl()));
   sl.registerLazySingleton(() => ChangePasswordUseCase(sl()));
+  sl.registerLazySingleton(() => DeleteAccountUseCase(sl()));
 
   sl.registerLazySingleton(() => GetSalesDashboardUseCase(sl()));
   sl.registerLazySingleton(() => GetLeadsUseCase(sl()));

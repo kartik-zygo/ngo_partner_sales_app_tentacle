@@ -67,8 +67,13 @@ class _AuthInterceptor extends Interceptor {
     final path = err.requestOptions.path;
     final isAuthEndpoint =
         path.contains('/auth/refresh') || path.contains('/auth/login');
+    // Password-checked requests answer a wrong password with 401 as well. A
+    // refresh cannot fix that, and the retry's own 401 would be queued behind
+    // the refresh in progress, so the request would never complete.
+    final isPasswordCheck = path.endsWith('/auth/me/password') ||
+        (path.endsWith('/auth/me') && err.requestOptions.method == 'DELETE');
 
-    if (err.response?.statusCode != 401 || isAuthEndpoint) {
+    if (err.response?.statusCode != 401 || isAuthEndpoint || isPasswordCheck) {
       handler.next(err);
       return;
     }

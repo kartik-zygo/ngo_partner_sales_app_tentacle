@@ -17,6 +17,7 @@ import '../../domain/entities/service_package.dart';
 import '../../domain/entities/support_call_request.dart';
 import '../../domain/entities/support_ticket.dart';
 import '../../domain/entities/team_member.dart';
+import '../../domain/repositories/auth_repository.dart';
 import '../../core/services/secure_storage_service.dart';
 
 class RemoteDataSource {
@@ -57,6 +58,49 @@ class RemoteDataSource {
     });
   }
 
+  /// `DELETE /auth/me`. The server re-checks [password], removes the account
+  /// and revokes every session. Returns its confirmation message.
+  Future<String> deleteAccount({required String password, String? reason}) async {
+    try {
+      final res = await _dio.delete('/auth/me', data: {
+        'password': password,
+        'confirm': 'DELETE',
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      });
+      final body = _data(res);
+      return body is Map ? (body['message'] ?? '').toString() : '';
+    } on DioException catch (e) {
+      throw _accountDeletionError(e);
+    }
+  }
+
+  AccountDeletionException _accountDeletionError(DioException e) {
+    final data = e.response?.data;
+    final serverMessage = data is Map && data['error'] is Map
+        ? (data['error'] as Map)['message'] as String?
+        : null;
+    switch (e.response?.statusCode) {
+      case null:
+        return const AccountDeletionException(
+          'Could not reach the server. Check your connection and try again.',
+        );
+      case 401:
+        return const AccountDeletionException(
+          'Incorrect password. Please check it and try again.',
+        );
+      case 409:
+        return AccountDeletionException(
+          serverMessage ??
+              'You are the only active admin. Make another team member an '
+                  'admin before deleting this account.',
+        );
+      default:
+        return AccountDeletionException(
+          serverMessage ?? 'Could not delete your account. Please try again.',
+        );
+    }
+  }
+
   Future<void> logout(String refreshToken) async {
     try {
       await _dio.post('/auth/logout', data: {'refreshToken': refreshToken});
@@ -73,17 +117,14 @@ class RemoteDataSource {
   Future<SalesDashboardSummary> getSalesDashboard() async {
     final res = await _dio.get('/dashboard/sales');
     final body = _data(res) as Map<String, dynamic>;
-    final byStatus = (body['leadsByStatus'] as List? ?? [])
-        .cast<Map<String, dynamic>>();
-    final wonCount = byStatus
-        .firstWhere((e) => e['status'] == 'won', orElse: () => {'count': 0})['count'] as int? ?? 0;
+    final byStatus = _mapList(body['leadsByStatus']);
     return SalesDashboardSummary(
-      assignedLeads: body['leadsTotal'] as int? ?? 0,
-      todayFollowUps: body['tasksPending'] as int? ?? 0,
-      monthlyConversions: wonCount,
-      pendingDocuments: body['openTickets'] as int? ?? 0,
+      assignedLeads: _int(body['leadsTotal']),
+      todayFollowUps: _int(body['tasksPending']),
+      monthlyConversions: _countFor(byStatus, 'won'),
+      pendingDocuments: _int(body['openTickets']),
       recentActivity: byStatus
-          .map((e) => '${e['status']}: ${e['count']}')
+          .map((e) => '${e['status']}: ${_int(e['count'])}')
           .toList(),
     );
   }
@@ -91,15 +132,13 @@ class RemoteDataSource {
   Future<AdminDashboardSummary> getAdminDashboard() async {
     final res = await _dio.get('/dashboard/admin');
     final body = _data(res) as Map<String, dynamic>;
-    final casesByStatus = (body['casesByStatus'] as List? ?? [])
-        .cast<Map<String, dynamic>>();
     final teamPerf = <String, int>{
-      for (final s in casesByStatus)
-        (s['status'] as String): int.tryParse(s['count'].toString()) ?? 0,
+      for (final s in _mapList(body['casesByStatus']))
+        '${s['status']}': _int(s['count']),
     };
     return AdminDashboardSummary(
-      totalTeamRevenue: (body['totalRevenue'] as num?)?.toDouble() ?? 0,
-      pipelineValue: (body['totalLeads'] as int? ?? 0) * 5000.0,
+      totalTeamRevenue: _double(body['totalRevenue']),
+      pipelineValue: _int(body['totalLeads']) * 5000.0,
       pendingApprovals: 0,
       teamPerformance: teamPerf,
       weeklyRevenue: const [],
@@ -110,15 +149,9 @@ class RemoteDataSource {
   Future<IntegrationDashboardMetrics> getIntegrationMetrics() async {
     final res = await _dio.get('/dashboard/integration-metrics');
     final body = _data(res) as Map<String, dynamic>;
-    final inbox = (body['inboxByStatus'] as List? ?? []).cast<Map<String, dynamic>>();
-    final outbox = (body['outboxByStatus'] as List? ?? []).cast<Map<String, dynamic>>();
-    final pendingInbox = inbox
-        .firstWhere((e) => e['status'] == 'pending', orElse: () => {'count': 0})['count'] as int? ?? 0;
-    final pendingOutbox = outbox
-        .firstWhere((e) => e['status'] == 'pending', orElse: () => {'count': 0})['count'] as int? ?? 0;
     return IntegrationDashboardMetrics(
-      newUserAppLeadsToday: pendingInbox,
-      unassignedUserAppLeads: pendingOutbox,
+      newUserAppLeadsToday: _countFor(_mapList(body['inboxByStatus']), 'pending'),
+      unassignedUserAppLeads: _countFor(_mapList(body['outboxByStatus']), 'pending'),
       casesStuckInResubmitRequired: 0,
       pendingCollaborationRequests: 0,
     );
@@ -710,7 +743,7 @@ class RemoteDataSource {
   Future<List<String>> getServiceCategories() async {
     final res = await _dio.get('/services/categories');
     final list = _data(res) as List;
-    return list.cast<String>();
+    return list.map((e) => e.toString()).toList();
   }
 
   Future<ServicePackage> getServiceById(String id) async {
@@ -887,7 +920,7 @@ class RemoteDataSource {
       if (filters != null) 'filters': filters,
     });
     final body = _data(res) as Map<String, dynamic>;
-    return body['fileUrl'] as String? ?? body['id'] as String? ?? '';
+    return (body['fileUrl'] ?? body['file_url'] ?? body['id'] ?? '').toString();
   }
 
   Future<List<String>> getReportExportHistory({int page = 1, int limit = 20}) async {
@@ -898,7 +931,8 @@ class RemoteDataSource {
     final list = _data(res) as List;
     return list
         .cast<Map<String, dynamic>>()
-        .map((e) => e['fileUrl'] as String? ?? e['id'] as String? ?? '')
+        // Export history is served as raw snake_case rows.
+        .map((e) => (e['fileUrl'] ?? e['file_url'] ?? e['id'] ?? '').toString())
         .where((s) => s.isNotEmpty)
         .toList();
   }
@@ -968,13 +1002,28 @@ class RemoteDataSource {
   }
 
   Lead _parseLead(Map<String, dynamic> json) {
-    final notes = (json['notes'] as List? ?? [])
-        .cast<Map<String, dynamic>>()
-        .map((n) => LeadNote(
-              message: n['content'] as String? ?? '',
-              createdAt: _parseDate(n['createdAt']) ?? DateTime.now(),
-            ))
-        .toList();
+    // `notes` is the lead's free-text field (a String) on the list and detail
+    // payloads, but a list of note rows on older responses. Casting the String
+    // to a List crashed every screen that loads leads.
+    final rawNotes = json['notes'];
+    final notes = rawNotes is List
+        ? _mapList(rawNotes)
+            .map((n) => LeadNote(
+                  message: (n['content'] ?? n['message'] ?? '').toString(),
+                  createdAt: _parseDate(n['createdAt'] ?? n['created_at']) ??
+                      DateTime.now(),
+                ))
+            .toList()
+        : rawNotes is String && rawNotes.trim().isNotEmpty
+            ? [
+                LeadNote(
+                  message: rawNotes.trim(),
+                  createdAt: _parseDate(json['updatedAt']) ??
+                      _parseDate(json['createdAt']) ??
+                      DateTime.now(),
+                ),
+              ]
+            : <LeadNote>[];
 
     final assignee = _parseAssignee(json['assignedTo']);
 
@@ -1073,7 +1122,8 @@ class RemoteDataSource {
           .whereType<Map>()
           .map((n) => QuotationNote(
                 content: (n['content'] ?? n['message'] ?? '').toString(),
-                createdAt: _parseDate(n['createdAt']) ?? DateTime.now(),
+                createdAt: _parseDate(n['createdAt'] ?? n['created_at']) ??
+                    DateTime.now(),
                 author: n['authorName'] as String? ??
                     n['createdByName'] as String? ??
                     (n['author'] is Map
@@ -1085,9 +1135,16 @@ class RemoteDataSource {
       activity: (json['activity'] as List? ?? [])
           .whereType<Map>()
           .map((a) => QuotationActivity(
-                message: (a['message'] ?? a['description'] ?? a['event'] ?? '')
+                // Activity rows come straight from `lead_activity`, so they
+                // carry `activity_type` / `created_at` rather than a message.
+                message: (a['message'] ??
+                        a['description'] ??
+                        a['event'] ??
+                        _activityLabel(a['activityType'] ?? a['activity_type']) ??
+                        '')
                     .toString(),
-                createdAt: _parseDate(a['createdAt']) ?? DateTime.now(),
+                createdAt: _parseDate(a['createdAt'] ?? a['created_at']) ??
+                    DateTime.now(),
                 performedBy: a['performedBy'] as String? ??
                     a['performedByName'] as String?,
               ))
@@ -1102,7 +1159,7 @@ class RemoteDataSource {
       name: _displayName(json) ?? '',
       email: json['email'] as String? ?? '',
       phone: json['phone'] as String?,
-      openRequests: (json['openRequests'] as num?)?.toInt() ?? 0,
+      openRequests: _int(json['openRequests']),
     );
   }
 
@@ -1120,7 +1177,7 @@ class RemoteDataSource {
     final docRequests = (json['documentRequests'] as List? ?? [])
         .cast<Map<String, dynamic>>()
         .map((d) => CaseDocumentRequest(
-              round: d['round'] as int? ?? 1,
+              round: _int(d['round'], 1),
               requestedAt: _parseDate(d['createdAt']) ?? DateTime.now(),
               requestedBy: '',
               reason: d['message'] as String? ?? '',
@@ -1173,8 +1230,9 @@ class RemoteDataSource {
       description: json['description'] as String? ?? '',
       createdAt: _parseDate(json['createdAt']) ?? DateTime.now(),
       status: _parseTicketStatus(json['status'] as String? ?? 'open'),
-      assignedToSalesId: json['assignedTo'] as String?,
-      isEscalated: json['isEscalated'] as bool? ?? false,
+      assignedToSalesId: _parseAssignee(json['assignedTo']).id,
+      // The tickets API names this field `escalated`.
+      isEscalated: (json['isEscalated'] ?? json['escalated']) == true,
       updates: updates,
     );
   }
@@ -1216,10 +1274,12 @@ class RemoteDataSource {
       ngoName: json['organizationName'] as String? ?? '',
       contactName: json['contactName'] as String? ?? '',
       contactEmail: json['contactEmail'] as String? ?? '',
-      message: json['message'] as String? ?? '',
+      // The collaborations API sends `proposal` / `convertedLeadId`.
+      message: (json['message'] ?? json['proposal'] ?? '').toString(),
       createdAt: _parseDate(json['createdAt']) ?? DateTime.now(),
-      isConvertedToLead: json['status'] == 'converted',
-      linkedLeadId: json['leadId'] as String?,
+      isConvertedToLead:
+          json['status'] == 'converted' || json['convertedLeadId'] != null,
+      linkedLeadId: (json['leadId'] ?? json['convertedLeadId']) as String?,
     );
   }
 
@@ -1242,10 +1302,12 @@ class RemoteDataSource {
     return AppNotification(
       id: json['id'] as String,
       title: json['title'] as String? ?? '',
-      body: json['body'] as String? ?? json['message'] as String? ?? '',
-      createdAt: _parseDate(json['createdAt']) ?? DateTime.now(),
+      body: (json['body'] ?? json['message'] ?? '').toString(),
+      // The notifications endpoint returns raw snake_case rows.
+      createdAt:
+          _parseDate(json['createdAt'] ?? json['created_at']) ?? DateTime.now(),
       targetRole: AppRole.sales,
-      isRead: json['isRead'] as bool? ?? false,
+      isRead: (json['isRead'] ?? json['is_read']) == true,
     );
   }
 
@@ -1270,7 +1332,7 @@ class RemoteDataSource {
       id: json['id'] as String,
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
-      price: (json['basePrice'] as num?)?.toDouble() ?? 0,
+      price: _double(json['basePrice'] ?? json['base_price']),
       category: json['category'] as String?,
       isActive: json['isActive'] as bool? ?? true,
     );
@@ -1289,7 +1351,7 @@ class RemoteDataSource {
       userId: json['userId'] as String? ?? '',
       serviceId: json['serviceId'] as String? ?? '',
       serviceName: json['serviceName'] as String? ?? '',
-      amount: (json['amount'] as num?)?.toDouble() ?? 0,
+      amount: _double(json['amount']),
       currency: json['currency'] as String? ?? 'INR',
       status: OrderPaymentStatus.fromApi(json['status'] as String?),
       fulfillmentStatus: _parseFulfillmentStatus(json['fulfillmentStatus'] as String?),
@@ -1318,8 +1380,9 @@ class RemoteDataSource {
       orderId: json['orderId'] as String? ?? '',
       paymentMethod: PaymentMethod.fromApi(json['paymentMethod'] as String?),
       referenceNumber: json['referenceNumber'] as String? ?? '',
-      amountClaimed: (json['amountClaimed'] as num?)?.toDouble() ?? 0,
-      orderAmount: (json['orderAmount'] as num?)?.toDouble(),
+      amountClaimed: _double(json['amountClaimed']),
+      orderAmount:
+          json['orderAmount'] == null ? null : _double(json['orderAmount']),
       amountMatchesOrder: json['amountMatchesOrder'] as bool? ?? true,
       paidAt: _parseDate(json['paidAt']),
       payerName: json['payerName'] as String?,
@@ -1342,9 +1405,14 @@ class RemoteDataSource {
   RevenueRecord _parseRevenueRecord(Map<String, dynamic> json) {
     return RevenueRecord(
       id: json['id'] as String,
-      date: _parseDate(json['recordedAt']) ?? DateTime.now(),
-      amount: (json['amount'] as num?)?.toDouble() ?? 0,
-      source: json['revenueType'] as String? ?? '',
+      // `/reports/revenue` returns raw rows: snake_case, DECIMAL as a string
+      // ("10000.00"), which crashed the reports screen on a num cast.
+      date: _parseDate(
+            json['recordedAt'] ?? json['revenueDate'] ?? json['revenue_date'],
+          ) ??
+          DateTime.now(),
+      amount: _double(json['amount']),
+      source: (json['revenueType'] ?? json['revenue_type'] ?? '').toString(),
     );
   }
 
@@ -1545,10 +1613,46 @@ class RemoteDataSource {
 
   DateTime? _parseDate(dynamic value) {
     if (value == null) return null;
-    try {
-      return DateTime.parse(value as String);
-    } catch (_) {
-      return null;
-    }
+    return DateTime.tryParse(value.toString());
+  }
+
+  /// Postgres returns COUNT (bigint) and DECIMAL columns as JSON strings, so a
+  /// numeric field can arrive as `3`, `"3"` or `"10000.00"` depending on the
+  /// query. These accept all three instead of throwing on a hard cast.
+  int _int(dynamic value, [int fallback = 0]) {
+    if (value is num) return value.toInt();
+    if (value is String) return num.tryParse(value)?.toInt() ?? fallback;
+    return fallback;
+  }
+
+  double _double(dynamic value, [double fallback = 0]) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? fallback;
+    return fallback;
+  }
+
+  List<Map<String, dynamic>> _mapList(dynamic value) => value is List
+      ? value.whereType<Map>().map(Map<String, dynamic>.from).toList()
+      : const [];
+
+  /// `count` for [status] in a `[{status, count}]` group-by result.
+  int _countFor(List<Map<String, dynamic>> rows, String status) => _int(
+        rows.firstWhere(
+          (r) => r['status'] == status,
+          orElse: () => const {},
+        )['count'],
+      );
+
+  /// `status_changed` / `statusChanged` → `Status changed`.
+  String? _activityLabel(dynamic type) {
+    if (type == null) return null;
+    final words = type
+        .toString()
+        .replaceAllMapped(RegExp(r'(?<=[a-z])([A-Z])'), (m) => ' ${m[1]}')
+        .replaceAll(RegExp(r'[_\-]+'), ' ')
+        .trim()
+        .toLowerCase();
+    if (words.isEmpty) return null;
+    return words[0].toUpperCase() + words.substring(1);
   }
 }

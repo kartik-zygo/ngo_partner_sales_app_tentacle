@@ -35,3 +35,12 @@ class ChangePasswordUseCase {
     );
   }
 }
+
+class DeleteAccountUseCase {
+  DeleteAccountUseCase(this._repository);
+  final AuthRepository _repository;
+
+  Future<String> call({required String password, String? reason}) {
+    return _repository.deleteAccount(password: password, reason: reason);
+  }
+}

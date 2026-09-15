@@ -25,6 +25,7 @@ import '../../blocs/payment_approvals/payment_approvals_bloc.dart';
 import '../../blocs/quotations/quotations_bloc.dart';
 import '../../blocs/tasks/tasks_bloc.dart';
 import 'sales_call_session_page.dart';
+import '../account/delete_account_page.dart';
 import '../community/community_moderation_page.dart';
 import '../../widgets/metric_card.dart';
 import '../../widgets/payment_approvals_view.dart';
@@ -2546,6 +2547,8 @@ class _SalesProfileTab extends StatelessWidget {
               onTap: () => _showChangePasswordDialog(context),
             ),
           ),
+          const SizedBox(height: 12),
+          const GlassCard(child: DeleteAccountTile()),
           const SizedBox(height: 12),
           const SectionTitle(
             title: 'Notifications',

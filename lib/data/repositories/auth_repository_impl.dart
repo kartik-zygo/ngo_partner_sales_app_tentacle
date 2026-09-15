@@ -55,4 +55,12 @@ class AuthRepositoryImpl implements AuthRepository {
       newPassword: newPassword,
     );
   }
+
+  @override
+  Future<String> deleteAccount({required String password, String? reason}) async {
+    final message = await _remote.deleteAccount(password: password, reason: reason);
+    // The server has already revoked every session; drop the dead tokens.
+    await _storage.clearTokens();
+    return message;
+  }
 }

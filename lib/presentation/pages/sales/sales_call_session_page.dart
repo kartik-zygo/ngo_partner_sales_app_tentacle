@@ -66,6 +66,16 @@ class _SalesCallSessionPageState extends State<SalesCallSessionPage> {
 
   bool get _isVideo => widget.call.type == SupportCallType.video;
 
+  /// Errors after which this session can never connect.
+  static const _fatalAgoraErrors = {
+    ErrorCodeType.errInvalidAppId,
+    ErrorCodeType.errInvalidChannelName,
+    ErrorCodeType.errInvalidToken,
+    ErrorCodeType.errTokenExpired,
+    ErrorCodeType.errJoinChannelRejected,
+    ErrorCodeType.errInvalidUserId,
+  };
+
   @override
   void initState() {
     super.initState();
@@ -99,7 +109,7 @@ class _SalesCallSessionPageState extends State<SalesCallSessionPage> {
         : [Permission.microphone];
     final results = await permissions.request();
     final denied = results.values.any(
-      (s) => s == PermissionStatus.denied || s == PermissionStatus.permanentlyDenied,
+      (s) => s.isDenied || s.isPermanentlyDenied || s.isRestricted,
     );
     if (denied) {
       if (mounted) {
@@ -119,7 +129,7 @@ class _SalesCallSessionPageState extends State<SalesCallSessionPage> {
       final tokenData = await widget.agoraTokenUseCase(widget.call.id);
       _agoraToken = tokenData['token'] as String? ?? '';
       _channelName = tokenData['channelName'] as String? ?? widget.call.id;
-      _localUid = tokenData['uid'] as int? ?? 2;
+      _localUid = int.tryParse('${tokenData['uid']}') ?? 2;
       _appId = tokenData['appId'] as String? ?? '';
 
       if (_appId.isEmpty) throw Exception('Agora App ID missing from server response.');
@@ -162,6 +172,10 @@ class _SalesCallSessionPageState extends State<SalesCallSessionPage> {
           } catch (_) {}
         },
         onError: (err, msg) {
+          // The SDK also reports recoverable conditions here (audio route
+          // changes, brief network loss). Treating those as fatal replaced a
+          // live video call with "Call Failed".
+          if (!_fatalAgoraErrors.contains(err)) return;
           if (mounted && !_callEnded) {
             setState(() {
               _isLoading = false;
